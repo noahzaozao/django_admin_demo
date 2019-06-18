@@ -1,0 +1,169 @@
+<fieldset class="module aligned {{ fieldset.classes }}" id="app">
+    {% if fieldset.name %}<h2>{{ fieldset.name }}</h2>{% endif %}
+    {% if fieldset.description %}
+        <div class="description">{{ fieldset.description|safe }}</div>
+    {% endif %}
+    <div class="form-row field-area">
+        <div>
+            <label class="required" for="id_userlist">用户:</label>
+            <div class="related-widget-wrapper">
+                <input type="hidden" name="user" v-model="user_id">
+                <select id="id_userlist" class="select2" required="" v-model="user_index"></select>
+            </div>
+        </div>
+    </div>
+    {% for line in fieldset %}
+        {% if line.fields.0 != 'user' %}
+        <div class="form-row{% if line.fields|length_is:'1' and line.errors %} errors{% endif %}{% if not line.has_visible_field %} hidden{% endif %}{% for field in line %}{% if field.field.name %} field-{{ field.field.name }}{% endif %}{% endfor %}">
+            {% if line.fields|length_is:'1' %}{{ line.errors }}{% endif %}
+            {% for field in line %}
+                <div{% if not line.fields|length_is:'1' %} class="field-box{% if field.field.name %} field-{{ field.field.name }}{% endif %}{% if not field.is_readonly and field.errors %} errors{% endif %}{% if field.field.is_hidden %} hidden{% endif %}"{% elif field.is_checkbox %} class="checkbox-row"{% endif %}>
+                    {% if not line.fields|length_is:'1' and not field.is_readonly %}{{ field.errors }}{% endif %}
+                    {% if field.is_checkbox %}
+                        {{ field.field }}{{ field.label_tag }}
+                    {% else %}
+                        {{ field.label_tag }}
+                        {% if field.is_readonly %}
+                            <div class="readonly">{{ field.contents }}</div>
+                        {% else %}
+                            {{ field.field }}
+                        {% endif %}
+                    {% endif %}
+                    {% if field.field.help_text %}
+                        <div class="help">{{ field.field.help_text|safe }}</div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endfor %}
+</fieldset>
+
+<script>
+    Vue.options.delimiters = ['[[', ']]'];
+    Vue.config.productionTip = false;
+
+    /**
+     * @description 获取数据
+     * @param {URIString} url  需要请求数据的接口地址
+     * @param {String} method  需要请求type
+     * @param {Object} parm 提交的参数
+     * */
+
+    window.canRequest = new Array(); //请求条件开关
+    function _dqRequest(url, method, param, callback) {
+
+        if(window.canRequest[callback] == undefined || window.canRequest[callback]) {
+            window.canRequest[callback] = false;
+            window.deviceClientWidth = document.body.clientWidth;
+
+            if(!param.hasOwnProperty("asyncType")) {
+                param.asyncType = true;
+            }
+
+            $.ajax(url, {
+                data: param,
+                crossDomain: true == !(document.all),
+                xhrFields: {
+                    withCredentials: true
+                },
+                dataType: 'json', //要求服务器返回json格式数据
+                type: method, //HTTP请求类型，要和服务端对应，要么GET,要么POST
+                timeout: 30000, //超时时间设置为30秒;
+                async: param.asyncType, //true异步，false同步
+                beforeSend: function() {},
+                complete: function () {},
+                success: function(response) {
+                    delete window.canRequest[callback];
+                    if(response && response.hasOwnProperty('return_code')) {
+                        callback(response);
+                    } else {
+                        console.log('温馨提示：数据格式错误');
+                    }
+                },
+                error:function(xhr, type, errorThrownhr) {
+                    delete window.canRequest[callback];
+                }
+            }); //ajax end
+        }
+    } //获取数据结束
+</script>
+<script>
+	$(function(){ 
+		 $("#id_userlist").on("change",function(e){
+			var user_id = $("#id_userlist option:selected").val();
+			if(user_id > 0) {
+				app.user_id = user_id;
+			}
+		 });
+	});
+	
+    var user_id = '{{user_id}}';
+    var username = '{{username}}';
+    var app = new Vue({
+		el: '#app',
+		data: {
+			userlist: [],
+			user_id: user_id,
+			username: username,
+			user_index: 0,
+		},
+		mounted: function() {
+			var csrfmiddlewaretoken = $("input[name='csrfmiddlewaretoken']").val();
+			$(".select2").select2({
+				ajax: {
+					url: '/api/user/search',
+					dataType: 'json',
+					type: 'POST',
+					delay: 100,
+					data: function (params) {
+						return {
+							csrfmiddlewaretoken: csrfmiddlewaretoken,
+							username: params.hasOwnProperty('term') ?   params.term : app.username
+						};
+					 },
+					 processResults: function (data) {
+						return { 
+							results: app.reform_data(data.data.userlist)
+						};
+					},
+					cache: true
+				},
+				placeholder:'请选择画师'
+			});
+			this.get_userlist();
+		},
+		methods: {
+			get_userlist: function() {
+				var csrfmiddlewaretoken = $("input[name='csrfmiddlewaretoken']").val();
+				_dqRequest('/api/user/search', 'POST', {
+					csrfmiddlewaretoken: csrfmiddlewaretoken,
+					username: this.username,
+				}, function(r) {
+					if(r.return_code==0) {
+						var d = app.reform_data(r.data.userlist);
+						if(d.length>0) {
+							app.$nextTick(function(){
+								app.user_id = d[0].id;
+								$('#select2-id_userlist-container').text(d[0].text);
+							});
+						}
+					} else {
+						toastr.error(r.return_message);
+					}
+				});
+			},
+			reform_data: function(d) {
+				var data = [];
+				for(var i = 0; i < d.length; i++) {
+					var obj = {
+						id: d[i].id,
+						text: d[i].username
+					}
+					data.push(obj);
+				}
+				return data
+			}
+		}
+	});
+</script>
